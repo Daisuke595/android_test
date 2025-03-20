@@ -1,0 +1,6 @@
+.large-button {
+    width: 200px;
+    height: 50px;
+    padding: 10px; /* 余白を追加 */
+    font-size: 18px; /* 文字サイズを大きく */
+}
