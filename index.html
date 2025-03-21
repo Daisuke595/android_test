@@ -1,14 +1,307 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    <meta charset="UTF-8">
-    <title>現在時刻を発話</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Yacht Timer</title>
+  <style>
+    body {
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    .container {
+      background-color: #f5f5f5;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    button {
+      background-color: #4285f4;
+      color: white;
+      border: none;
+      padding: 10px 15px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 16px;
+      margin-right: 10px;
+      margin-bottom: 10px;
+    }
+    button:hover {
+      background-color: #3367d6;
+    }
+    button:disabled {
+      background-color: #cccccc;
+      cursor: not-allowed;
+    }
+    .time-display {
+      margin-top: 20px;
+      font-size: 18px;
+    }
+    #status {
+      color: #666;
+      margin-top: 10px;
+      font-style: italic;
+    }
+    #result {
+      margin-top: 15px;
+      font-weight: bold;
+      color: #4285f4;
+
+    }
+    #countdown {
+      margin-top: 20px;
+      font-size: 24px;
+      font-weight: bold;
+      color: #ff00ff;
+    }
+    .countdown-controls {
+      margin-top: 20px;
+    }
+    .countdown-active {
+      background-color: #cccccc;
+    }
+    .countdown-active:hover {
+      background-color: #cccccc;
+    }
+  </style>
 </head>
 <body>
-    <link rel="stylesheet" href="style.css">
-    <button id="speakButton" class="large-button">現在時刻を発話</button>
-    <script src="script.js"></script>
+  <div class="container">
+  <h1 style="color: #050dff;">Yacht Timer<span style="color: #cccccc; font-size: 16px; margin-left: 15px; font-weight: normal;">v.0.03.20.6</span> </h1>
+
+    <div class="time-display">
+      <label for="startTime">スタート時刻:</label>
+      <input type="time" id="startTime">
+    </div>
+
+    <p id="result"></p>
+
+  <!-- カウントダウン表示エリア（追加） -->
+  <div id="countdown"></div>
+
+  <!-- カウントダウン操作ボタン（追加） -->
+  <div class="countdown-controls">
+    <button id="startCountdownBtn">カウントダウン開始</button>
+    <button id="stopCountdownBtn" disabled>カウントダウン停止</button>
+  </div>
+  </div>
+
+<script>
+
+const startButton = document.getElementById('startButton');
+const status = document.getElementById('status');
+const result = document.getElementById('result');
+const startTime = document.getElementById('startTime');
+const countdown = document.getElementById('countdown');
+const startCountdownBtn = document.getElementById('startCountdownBtn');
+const stopCountdownBtn = document.getElementById('stopCountdownBtn');
+
+// カウントダウン用変数
+let countdownInterval = null;
+let lastMinute = -1; // 前回読み上げた分を記録
+
+// 音声合成関数
+function speak(text) {
+	if (!window.speechSynthesis) {
+			console.warn('このブラウザでは音声合成がサポートされていません。');
+			return;
+	}
+	const isAndroid = /Android/i.test(navigator.userAgent);
+	const isIOS = /iPhone|iPad/i.test(navigator.userAgent) && !window.MSStream;
+
+	const utterance = new SpeechSynthesisUtterance(text);
+	utterance.lang = 'ja-JP';	
+	utterance.pitch = 1.0
+
+	if (isAndroid) {
+		utterance.rate = 1.3;
+	}
+	else if(isIOS){
+		utterance.rate = 1.1;
+	}
+	else{
+		utterance.rate = 1.3;
+	}
+
+	if (isAndroid) {
+		window.speechSynthesis.speak(utterance);
+	}
+	else{
+		// 日本語のvoiceを明示的に選択
+		const voices = window.speechSynthesis.getVoices();
+		const japaneseVoices = voices.filter(voice => voice.lang === 'ja-JP');
+
+		/*
+		console.log('利用可能な日本語音声リスト:');
+		japaneseVoices.forEach((voice, index) => {
+			console.log(`${index}: Name: ${voice.name}, Lang: ${voice.lang}, LocalService: ${voice.localService}`);
+		});
+		*/
+
+		if (japaneseVoices.length > 0) {
+			// Kyokoを含む音声を検索
+			const kyokoVoice = japaneseVoices.find(voice => voice.name.includes('Kyoko'));
+
+			if (kyokoVoice) {
+				utterance.voice = kyokoVoice; // Kyokoの音声を設定
+				//utterance.voice = japaneseVoices[0];
+				console.log(`選択された音声: ${kyokoVoice.name}`);
+			} else {
+				utterance.voice = japaneseVoices[0]; // Kyokoが見つからなければ最初の日本語音声を設定
+				console.log(`Kyokoが見つからなかったため、デフォルトの音声を使用: ${japaneseVoices[0].name}`);
+			}
+			} else {
+				console.warn('日本語の音声が見つかりませんでした。');
+				return;
+		}
+		window.speechSynthesis.speak(utterance);
+	}
+}
+
+// Safariなど一部ブラウザでvoicesが遅延ロードされる対策
+window.speechSynthesis.onvoiceschanged = () => {
+  window.speechSynthesis.getVoices();
+};
+
+// 残り時間を計算して表示する関数
+function updateCountdown() {
+  const targetTimeStr = startTime.value;
+  // 表示用テキスト
+  let countdownText = '';
+
+  if (!targetTimeStr) {
+    //countdown.textContent = 'スタート時刻を設定してください';
+		countdown.innerHTML = `<span style="font-size:18px; font-weight:bold;">スタート時刻を設定してください</span>`;
+    return;
+  }
+  
+  const now = new Date();
+  const [hours, minutes] = targetTimeStr.split(':').map(Number);
+  
+  // スタート時刻のDateオブジェクトを作成
+  const targetTime = new Date();
+  targetTime.setHours(hours, minutes, 0, 0);
+  
+  // 残り時間（ミリ秒）
+  let timeDiff = targetTime - now;
+  
+  // ミリ秒を時間、分、秒に変換
+  const hoursLeft = Math.floor(timeDiff / (1000 * 60 * 60));
+  const minutesLeft = Math.floor((timeDiff % (1000 * 60 * 60)) / (1000 * 60));
+  const secondsLeft = Math.floor((timeDiff % (1000 * 60)) / 1000);
+  
+  if (minutesLeft === 0 && secondsLeft === 0) {
+    speak(`スタート`);
+    //countdown.textContent = 'スタート';
+    countdown.innerHTML = '<div style="text-align:center;"><span style="font-size:65px; font-weight:bold;">スタート</span></div>';
+    stopCountdown();
+    return; // ←ここで終了することで翌日の設定を防止
+  }
+
+	announceTimeLeft(minutesLeft, secondsLeft);
+
+  if (hoursLeft > 0) {
+    countdownText += `${hoursLeft}時間`;
+  }
+  countdownText += `${minutesLeft}分${secondsLeft}秒`;
+  //countdown.textContent = `スタートまであと ${countdownText}`;
+  countdown.innerHTML = `スタートまで<br> <span style="font-size:65px; font-weight:bold;">${countdownText}</span>`;
+}
+
+function announceTimeLeft(minutesLeft, secondsLeft) {
+  // 特殊ケース：15秒以下
+	if (minutesLeft === 0 && secondsLeft <= 15) {
+		// 11以外の数値を先に処理
+		if (secondsLeft !== 11) {
+			speak(`${secondsLeft}`);
+		} else {
+			// 数値11の場合は漢数字で対応
+			speak("十一");
+		}
+  return;
+}
+
+  
+  // 時間アナウンスのマッピング
+  const announcements = {
+    '0:20': '20秒前',
+    '0:30': '30秒前',
+    '0:40': '40秒前',
+    '0:50': '50秒前'
+  };
+  
+  // 1分から9分までの分と30秒のパターン
+  for (let i = 1; i <= 9; i++) {
+    announcements[`${i}:0`] = `${i}分前`;
+    announcements[`${i}:30`] = `${i}分30秒前`;
+  }
+  
+  // 10分から15分までの分のみのパターン
+  for (let i = 10; i <= 15; i++) {
+    announcements[`${i}:0`] = `${i}分前`;
+  }
+  
+  // キーを作成して検索
+  const key = `${minutesLeft}:${secondsLeft}`;
+  if (announcements[key]) {
+    speak(announcements[key]);
+  }
+}
+
+// カウントダウン開始
+function startCountdown() {
+  if (!startTime.value) {
+    speak('スタート時刻を設定してください');
+    return;
+  }
+  
+  // 既存のカウントダウンがあれば停止
+  stopCountdown();
+  
+  // 初回更新
+  updateCountdown();
+  
+  // 1秒ごとに更新
+  countdownInterval = setInterval(updateCountdown, 1000);
+  
+  // ボタンの状態を更新
+  startCountdownBtn.disabled = true;
+  stopCountdownBtn.disabled = false;
+  
+  startCountdownBtn.classList.add('countdown-active');
+  
+  speak('カウントダウンを開始しました');
+}
+
+// カウントダウン停止
+function stopCountdown() {
+  if (countdownInterval !== null) {
+    clearInterval(countdownInterval);
+    countdownInterval = null;
+    
+    // ボタンの状態を更新
+    startCountdownBtn.disabled = false;
+    stopCountdownBtn.disabled = true;
+    
+    startCountdownBtn.classList.remove('countdown-active');
+    
+    //speak('カウントダウンを停止しました');
+  }
+}
+
+// カウントダウンボタンイベント設定
+startCountdownBtn.addEventListener('click', startCountdown);
+stopCountdownBtn.addEventListener('click', stopCountdown);
+
+// 手動での時刻入力にも対応
+startTime.addEventListener('change', updateCountdown);
+
+// 初期表示
+updateCountdown();
+
+</script>
+
 </body>
 </html>
-
-
